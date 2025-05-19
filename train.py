@@ -396,7 +396,11 @@ def train(hyp, opt, device, tb_writer=None):
                 loss, lbox , lobj , lcls  = compute_loss(pred, targets.to(device))  # loss scaled by batch_size
                 loss_items = torch.cat((lbox, lobj, lcls, loss)).detach()
                 if opt.super: #and not opt.attention and not opt.super_attention:    
-                    xy_centers = pred  #[..., 0:2]  # shape: (B, N, 2)
+                    # 提取预测的中心点坐标（假设 pred 是 (batch, num_preds, 85) 格式）
+                    pred = pred[0]
+                    xy_centers = pred[..., 0:2]  # shape: (B, N, 2)，中心点坐标，已映射回原图
+
+                    # 创建掩码函数
                     def create_mask_from_centers(centers, h, w, radius=10, sigma=5):
                         device = centers.device
                         mask = torch.zeros((centers.shape[0], 1, h, w), device=device)
@@ -408,16 +412,17 @@ def train(hyp, opt, device, tb_writer=None):
                                 gauss = torch.exp(-((xx - cx) ** 2 + (yy - cy) ** 2) / (2 * sigma ** 2))
                                 mask[b, 0] += gauss
                         return torch.clamp(mask, 0, 1)
-
                     def create_mask_from_boxes(pred, h, w, scale=6.0):
-                        # pred shape: [B, N, 6~85] (x, y, w, h, obj, ...)
                         device = pred.device
                         mask = torch.zeros((pred.shape[0], 1, h, w), device=device)
                         yy, xx = torch.meshgrid(torch.arange(h, device=device), torch.arange(w, device=device), indexing='ij')
-    
+                    
                         for b in range(pred.shape[0]):
                             for i in range(pred.shape[1]):
-                                cx, cy, bw, bh, conf = pred[b, i, :5]
+                                try:
+                                    cx, cy, bw, bh, conf = map(float, pred[b, i, :5])
+                                except:
+                                    continue
                                 if conf < 0.3:
                                     continue
                                 sigma_x = bw / scale
@@ -426,9 +431,10 @@ def train(hyp, opt, device, tb_writer=None):
                                 mask[b, 0] += gauss
                         return torch.clamp(mask, 0, 1)
 
+                    # 生成掩码并作用于超分输出
                     B, C, H, W = output_sr.shape
                     mask = create_mask_from_boxes(xy_centers, H, W)  # shape: [B, 1, H, W]
-                    enhanced_sr = output_sr * (1 + 0.5 * mask)
+                    enhanced_sr = output_sr * (1 + 0.5 * mask)  # 权重增强，0.5 可调
                     
                     if opt.input_mode =='IR':
                         sr_loss = 0.1*torch.nn.L1Loss()(output_sr,ir_image)
