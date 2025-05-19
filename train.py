@@ -396,7 +396,7 @@ def train(hyp, opt, device, tb_writer=None):
                 loss, lbox , lobj , lcls  = compute_loss(pred, targets.to(device))  # loss scaled by batch_size
                 loss_items = torch.cat((lbox, lobj, lcls, loss)).detach()
                 if opt.super: #and not opt.attention and not opt.super_attention:    
-                    xy_centers = pred[..., 0:2]  # shape: (B, N, 2)
+                    xy_centers = pred  #[..., 0:2]  # shape: (B, N, 2)
                     def create_mask_from_centers(centers, h, w, radius=10, sigma=5):
                         device = centers.device
                         mask = torch.zeros((centers.shape[0], 1, h, w), device=device)
